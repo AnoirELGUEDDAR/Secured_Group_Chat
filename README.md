@@ -1,4 +1,7 @@
 ![image](https://github.com/user-attachments/assets/969a470b-1ef8-44fa-96bb-419174ae53d2)
+***In WIRESHARK,as you see the message is encrypted***
+![image](https://github.com/user-attachments/assets/df037efd-87a1-4f3b-a76f-b97953c88ee4)
+
 
 This project implements a peer-to-peer (P2P) group chat application that prioritizes security using RSA encryption. It enables multiple users to connect and communicate directly with each other in real-time without relying on a central server.
 
