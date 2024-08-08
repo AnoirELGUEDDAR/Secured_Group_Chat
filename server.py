@@ -3,59 +3,53 @@ import threading
 import queue
 import rsa
 
+# Generate public and private keys for the server
 public_key, private_key = rsa.newkeys(1024)
-clients = {}  # Dictionary to store client address and public key
+clients = {}
+messages = queue.Queue()
 
-messages = queue.Queue()  # Queue to store messages received from clients
+# Create and bind the server socket
 server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-server.bind(('localhost', 9999))  # bind the server to the specified IP and port
+server.bind(('localhost', 9999))
 
-
-def receive():  # receive messages from clients and put them into the queue
+def receive():
     while True:
         try:
-            message, address = server.recvfrom(
-                1024)  # Receives a message of up to 1024 bytes and the address it came from
-            messages.put((message, address))  # put the received message and address as a tuple into the queue
-        except:
-            pass
+            message, address = server.recvfrom(2048)
+            messages.put((message, address))
+        except Exception as e:
+            print(f"Error receiving message: {e}")
 
-
-def broadcast():  # take the messages from queue and broadcast them to all clients
+def broadcast():
     while True:
-        while not messages.empty():  # check if there are any messages in the queue
-            message, addr = messages.get()  # get the message and address from the queue
-
-            if addr not in clients:
-                clients[addr] = None
-
+        while not messages.empty():
+            message, addr = messages.get()
             try:
                 decoded_message = message.decode()
-
-                if decoded_message.startswith("KEY:"):  # If the message contains a public key
-                    client_public_key = rsa.PublicKey.load_pkcs1(decoded_message[4:].encode())
-                    clients[addr] = client_public_key
-                else:
-                    if decoded_message.startswith("WELCOME :"):  # If the client is new
-                        name = decoded_message.split(":")[1]  # to detect the name
-                        for client in clients:
+                if decoded_message.startswith("KEY:"):
+                    public_key_str = decoded_message[len("KEY:"):]
+                    clients[addr] = rsa.PublicKey.load_pkcs1(public_key_str.encode())
+                    server.sendto(f"SERVER_KEY:{public_key.save_pkcs1().decode()}".encode(), addr)
+                elif decoded_message.startswith("WELCOME :"):
+                    name = decoded_message.split(":")[1].strip()
+                    for client in clients.keys():
+                        if client != addr:
                             server.sendto(f"{name} joined!".encode(), client)
-                    else:
-                        for client, client_public_key in clients.items():
-                            if client_public_key is not None:
-                                encrypted_message = rsa.encrypt(message, client_public_key)
+                else:
+                    raise UnicodeDecodeError  # If not a key or welcome message, raise error to be handled as encrypted
+            except (UnicodeDecodeError, ValueError):
+                if addr in clients:
+                    try:
+                        decrypted_message = rsa.decrypt(message, private_key).decode()
+                        print(f"{decrypted_message}")  # Display the message normally
+                        for client, pub_key in clients.items():
+                            if client != addr:
+                                encrypted_message = rsa.encrypt(decrypted_message.encode(), pub_key)
                                 server.sendto(encrypted_message, client)
-            except UnicodeDecodeError:
-                # if the message cannot be decoded,just send it to all clients as it is
-                for client in clients:
-                    server.sendto(message, client)
-            except Exception as e:
-                print(f"Error: {e}")
-                clients.pop(client)
-
+                    except Exception as e:
+                        print(f"Error decrypting or sending message from {addr}: {e}")
 
 t1 = threading.Thread(target=receive)
-t2 = threading.Thread(
-    target=broadcast)  # Threading allows you to have different parts of your process run at the same time
+t2 = threading.Thread(target=broadcast)
 t1.start()
 t2.start()
